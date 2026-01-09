@@ -1,589 +1,699 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Fragments of the Sky</title>
-  <style>
-    body {
-      margin: 0;
-      background: black;
-      color: white;
-      font-family: monospace;
-      overflow: hidden;
+ <meta charset="UTF-8">
+ <title>Fragments of the Sky</title>
+ <style>
+   body {
+     margin: 0;
+     background: black;
+     color: white;
+     font-family: monospace;
+     overflow: hidden;
 
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
 
-    canvas {
-      background: black;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
+     display: flex;
+     align-items: center;
+     justify-content: center;
+   }
 
-      width: 100vw;
-      height: 100vh;
 
-      max-width: calc(100vh * (640 / 360));
-      max-height: calc(100vw * (360 / 640));
-    }
-  </style>
+   canvas {
+     background: black;
+     image-rendering: pixelated;
+     image-rendering: crisp-edges;
+
+
+     width: 100vw;
+     height: 100vh;
+
+
+     max-width: calc(100vh * (640 / 360));
+     max-height: calc(100vw * (360 / 640));
+   }
+ </style>
 </head>
 <body>
 
+
 <canvas id="gameCanvas" width="640" height="360"></canvas>
+
 
 <script>
 /* ============================================================
-   CORE CANVAS SETUP
-   - Grabs the canvas and prepares a pixel-art style renderer.
+  CORE CANVAS SETUP
+  - Grabs the canvas and prepares a pixel-art style renderer.
 ============================================================ */
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 ctx.imageSmoothingEnabled = false;
 
+
 /* ============================================================
-   GAME STATES
-   - Controls which screen/mode is currently running.
+  GAME STATES
+  - Controls which screen/mode is currently running.
 ============================================================ */
 const GAME_STATE = {
-  TITLE: "title",
-  PLATFORMER: "platformer",
-  SHOOTER: "shooter",
-  PUZZLE: "puzzle",
-  RHYTHM: "rhythm",
-  GAME_OVER: "gameover",
-  YOU_WIN: "youwin"
+ TITLE: "title",
+ PLATFORMER: "platformer",
+ SHOOTER: "shooter",
+ PUZZLE: "puzzle",
+ RHYTHM: "rhythm",
+ GAME_OVER: "gameover",
+ YOU_WIN: "youwin"
 };
+
 
 let currentState = GAME_STATE.TITLE;
 let stageNumber = 1;   // 1 = platformer, 2 = shooter, 3 = rhythm
 let stagePart = 0;     // 0=a, 1=b, 2=c
 
+
 /* Tracks how many stars have been collected across all stages (max 9). */
 let starsCollected = 0;
+
 
 /* Stores why the player lost and which mode it happened in. */
 let gameOverReason = "";
 let gameOverFromState = GAME_STATE.TITLE;
 
+
 /* ============================================================
-   INPUT HANDLING
-   - Stores key states so the update loop can read them.
+  INPUT HANDLING
+  - Stores key states so the update loop can read them.
 ============================================================ */
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key] = true);
 window.addEventListener("keyup", e => keys[e.key] = false);
 
+
 /* ============================================================
-   UTILITY FUNCTIONS
-   - clamp: keeps a number within a range
-   - rand: random number in a range
-   - aabb: rectangle collision test
+  UTILITY FUNCTIONS
+  - clamp: keeps a number within a range
+  - rand: random number in a range
+  - aabb: rectangle collision test
 ============================================================ */
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function rand(min, max) { return Math.random() * (max - min) + min; }
 function aabb(ax, ay, aw, ah, bx, by, bw, bh) {
-  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+ return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
 }
 
+
 /* ============================================================
-   ASSET LOADING
-   - Loads images into the `assets` object for later use.
+  ASSET LOADING
+  - Loads images into the `assets` object for later use.
 ============================================================ */
 const assets = {};
 function loadImage(name, src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => { assets[name] = img; resolve(img); };
-    img.onerror = reject;
-    img.src = src;
-  });
+ return new Promise((resolve, reject) => {
+   const img = new Image();
+   img.onload = () => { assets[name] = img; resolve(img); };
+   img.onerror = reject;
+   img.src = src;
+ });
 }
 async function loadAssets() {
-  await loadImage("sheet", "Videogameassets.png");
-  await loadImage("bg_level1", "bg_level1.png");
-  await loadImage("bg_level2", "bg_level2.png");
-  // Optional later:
-  // await loadImage("bg_level3", "bg_level3.png");
+ await loadImage("sheet", "Videogameassets.png");
+ await loadImage("bg_level1", "bg_level1.png");
+ await loadImage("bg_level2", "bg_level2.png");
+ // Optional later:
+ // await loadImage("bg_level3", "bg_level3.png");
 }
 
+
 /* ============================================================
-   AUDIO MANAGER
-   - Unlocks audio on first user interaction (browser policy).
-   - Plays background music and short sound effects.
+  AUDIO MANAGER
+  - Unlocks audio on first user interaction (browser policy).
+  - Plays background music and short sound effects.
 ============================================================ */
 const AUDIO_FILES = {
-  bgm_main: "audio/music-royalty free.mp3",
+ bgm_main: "audio/music-royalty free.mp3",
 
-  coin: "audio/retro-coin-4-236671.mp3",
-  wrong: "audio/8-bit-wrong-2-84407.mp3",
-  explosion1: "audio/8-bit-explosion-95847.mp3",
-  explosion2: "audio/8-bit-explosion-3-340456.mp3",
-  jump: "audio/pixel-jump-319167.mp3",
-  step: "audio/8-bit-wood-footsteps-2-408652 (1).mp3",
-  powerup: "audio/8-bit-powerup-6768.mp3",
-  laser: "audio/8-bit-laser-151672.mp3",
-  stinger: "audio/experimental-8-bit-sound-270302.mp3"
+
+ coin: "audio/retro-coin-4-236671.mp3",
+ wrong: "audio/8-bit-wrong-2-84407.mp3",
+ explosion1: "audio/8-bit-explosion-95847.mp3",
+ explosion2: "audio/8-bit-explosion-3-340456.mp3",
+ jump: "audio/pixel-jump-319167.mp3",
+ step: "audio/8-bit-wood-footsteps-2-408652 (1).mp3",
+ powerup: "audio/8-bit-powerup-6768.mp3",
+ laser: "audio/8-bit-laser-151672.mp3",
+ stinger: "audio/experimental-8-bit-sound-270302.mp3"
 };
 
+
 const AudioMan = (() => {
-  const music = {};
-  let currentMusicKey = null;
-  let unlocked = false;
+ const music = {};
+ let currentMusicKey = null;
+ let unlocked = false;
 
-  function uri(path) { return encodeURI(path); }
 
-  function init() {
-    music.bgm_main = new Audio(uri(AUDIO_FILES.bgm_main));
-    music.bgm_main.loop = true;
-    music.bgm_main.volume = 0.35;
-    music.bgm_main.preload = "auto";
-  }
+ function uri(path) { return encodeURI(path); }
 
-  function unlock() {
-    if (unlocked) return;
-    unlocked = true;
 
-    const a = music.bgm_main;
-    a.play().then(() => a.pause()).catch(() => {});
+ function init() {
+   music.bgm_main = new Audio(uri(AUDIO_FILES.bgm_main));
+   music.bgm_main.loop = true;
+   music.bgm_main.volume = 0.35;
+   music.bgm_main.preload = "auto";
+ }
 
-    setBGMForState(currentState);
-  }
 
-  function playSFX(key, volume = 0.6, rate = 1.0) {
-    if (!unlocked) return;
-    const src = AUDIO_FILES[key];
-    if (!src) return;
+ function unlock() {
+   if (unlocked) return;
+   unlocked = true;
 
-    const s = new Audio(uri(src));
-    s.volume = volume;
-    s.playbackRate = rate;
-    s.preload = "auto";
-    s.play().catch(() => {});
-  }
 
-  function playStinger() { playSFX("stinger", 0.55, 1.0); }
+   const a = music.bgm_main;
+   a.play().then(() => a.pause()).catch(() => {});
 
-  function stopAllMusic() {
-    for (const k in music) {
-      try { music[k].pause(); music[k].currentTime = 0; } catch (e) {}
-    }
-    currentMusicKey = null;
-  }
 
-  function setMusic(key) {
-    if (!unlocked) return;
-    if (currentMusicKey === key) return;
+   setBGMForState(currentState);
+ }
 
-    if (currentMusicKey && music[currentMusicKey]) music[currentMusicKey].pause();
-    currentMusicKey = key;
 
-    const track = music[key];
-    if (!track) return;
-    track.play().catch(() => {});
-  }
+ function playSFX(key, volume = 0.6, rate = 1.0) {
+   if (!unlocked) return;
+   const src = AUDIO_FILES[key];
+   if (!src) return;
 
-  function setBGMForState(state) {
-    if (state === GAME_STATE.TITLE) setMusic("bgm_main");
-    else if (state === GAME_STATE.PLATFORMER) setMusic("bgm_main");
-    else if (state === GAME_STATE.SHOOTER) setMusic("bgm_main");
-    else if (state === GAME_STATE.RHYTHM) setMusic("bgm_main");
-    else if (state === GAME_STATE.GAME_OVER) setMusic("bgm_main");
-    else if (state === GAME_STATE.YOU_WIN) setMusic("bgm_main");
-    else setMusic("bgm_main");
-  }
 
-  return { init, unlock, playSFX, playStinger, setBGMForState, stopAllMusic };
+   const s = new Audio(uri(src));
+   s.volume = volume;
+   s.playbackRate = rate;
+   s.preload = "auto";
+   s.play().catch(() => {});
+ }
+
+
+ function playStinger() { playSFX("stinger", 0.55, 1.0); }
+
+
+ function stopAllMusic() {
+   for (const k in music) {
+     try { music[k].pause(); music[k].currentTime = 0; } catch (e) {}
+   }
+   currentMusicKey = null;
+ }
+
+
+ function setMusic(key) {
+   if (!unlocked) return;
+   if (currentMusicKey === key) return;
+
+
+   if (currentMusicKey && music[currentMusicKey]) music[currentMusicKey].pause();
+   currentMusicKey = key;
+
+
+   const track = music[key];
+   if (!track) return;
+   track.play().catch(() => {});
+ }
+
+
+ function setBGMForState(state) {
+   if (state === GAME_STATE.TITLE) setMusic("bgm_main");
+   else if (state === GAME_STATE.PLATFORMER) setMusic("bgm_main");
+   else if (state === GAME_STATE.SHOOTER) setMusic("bgm_main");
+   else if (state === GAME_STATE.RHYTHM) setMusic("bgm_main");
+   else if (state === GAME_STATE.GAME_OVER) setMusic("bgm_main");
+   else if (state === GAME_STATE.YOU_WIN) setMusic("bgm_main");
+   else setMusic("bgm_main");
+ }
+
+
+ return { init, unlock, playSFX, playStinger, setBGMForState, stopAllMusic };
 })();
+
 
 AudioMan.init();
 window.addEventListener("pointerdown", AudioMan.unlock, { once: true });
 window.addEventListener("keydown", AudioMan.unlock, { once: true });
 
+
 /* ============================================================
-   GAME FLOW HELPERS
-   - triggerGameOver: moves to Game Over screen with a reason
-   - startNewGameFromTitle: resets progress and starts Level 1a
+  GAME FLOW HELPERS
+  - triggerGameOver: moves to Game Over screen with a reason
+  - startNewGameFromTitle: resets progress and starts Level 1a
 ============================================================ */
 function triggerGameOver(reason) {
-  gameOverReason = reason || "Game Over";
-  gameOverFromState = currentState;
-  currentState = GAME_STATE.GAME_OVER;
-  AudioMan.playSFX("wrong", 0.75);
+ gameOverReason = reason || "Game Over";
+ gameOverFromState = currentState;
+ currentState = GAME_STATE.GAME_OVER;
+ AudioMan.playSFX("wrong", 0.75);
 }
+
 
 function startNewGameFromTitle() {
-  starsCollected = 0;
-  lives = 3;
-  stageNumber = 1;
-  stagePart = 0;
-  loadPlatformerSublevel(0);
-  currentState = GAME_STATE.PLATFORMER;
+ starsCollected = 0;
+ lives = 3;
+ stageNumber = 1;
+ stagePart = 0;
+ loadPlatformerSublevel(0);
+ currentState = GAME_STATE.PLATFORMER;
 }
 
+
 /* ============================================================
-   BACKGROUND DRAWING
-   - Scales a background image to cover the canvas.
+  BACKGROUND DRAWING
+  - Scales a background image to cover the canvas.
 ============================================================ */
 function drawBackground(imgKey) {
-  const img = assets[imgKey];
-  if (!img) return;
+ const img = assets[imgKey];
+ if (!img) return;
 
-  const cw = canvas.width, ch = canvas.height;
-  const iw = img.width, ih = img.height;
 
-  const scale = Math.max(cw / iw, ch / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
+ const cw = canvas.width, ch = canvas.height;
+ const iw = img.width, ih = img.height;
 
-  const dx = (cw - dw) / 2;
-  const dy = (ch - dh) / 2;
 
-  ctx.drawImage(img, dx, dy, dw, dh);
+ const scale = Math.max(cw / iw, ch / ih);
+ const dw = iw * scale;
+ const dh = ih * scale;
+
+
+ const dx = (cw - dw) / 2;
+ const dy = (ch - dh) / 2;
+
+
+ ctx.drawImage(img, dx, dy, dw, dh);
 }
 
+
 /* ============================================================
-   SPRITE DEFINITIONS + DRAWING
-   - SPRITES stores sprite-sheet rectangles
-   - drawSprite draws a selected sprite onto the canvas
+  SPRITE DEFINITIONS + DRAWING
+  - SPRITES stores sprite-sheet rectangles
+  - drawSprite draws a selected sprite onto the canvas
 ============================================================ */
 const SPRITES = {
-  astro_stand_left:  { sx:16,  sy:3313, sw:313, sh:463 },
-  astro_walk_left:   { sx:16,  sy:3738, sw:313, sh:613 },
-  astro_stand_right: { sx:23,  sy:2825, sw:320, sh:488 },
-  astro_walk_right:  { sx:352, sy:3738, sw:336, sh:500 },
+astro_stand_left:  { sx:39,  sy:3300, sw:297, sh:463 },
+astro_walk_left:   { sx:0,  sy:3775, sw:313, sh:475 },
+astro_stand_right: { sx:23,  sy:2825, sw:320, sh:438 },
+astro_walk_right:  { sx:359,  sy:3725, sw:328, sh:513 },
 
-  star: { sx:539, sy:875, sw:609, sh:588 },
 
-  plat_blue_top:  { sx:1344, sy:2820, sw:367, sh:338 },
-  plat_blue_body: { sx:930,  sy:2825, sw:367, sh:363 },
-  plat_purple_top:  { sx:1344, sy:3250, sw:359, sh:350 },
-  plat_purple_body: { sx:938,  sy:3250, sw:359, sh:338 },
-  plat_red_top:  { sx:1352, sy:2425, sw:359, sh:350 },
-  plat_red_body: { sx:938,  sy:2438, sw:359, sh:338 },
 
-  rocket: { sx:86, sy:13, sw:414, sh:738 },
-  bullet: { sx:766, sy:3688, sw:469, sh:375 },
 
-  asteroid1: { sx:1188, sy:1888, sw:570, sh:488 },
-  asteroid2: { sx:1828, sy:1250, sw:891, sh:675 },
-  asteroid3: { sx:1164, sy:1475, sw:641, sh:400 },
-  asteroid4: { sx:1867, sy:438,  sw:859, sh:738 },
+star: { sx:539, sy:875, sw:609, sh:588 },
 
-  power_shield: { sx:0,   sy:1625, sw:492, sh:613 },
-  power_rapid:  { sx:570, sy:1950, sw:492, sh:563 },
 
-  rh_arrow_up: { sx:2883,   sy:450, sw:250, sh:325 },
-  rh_arrow_down: { sx:3133,   sy:450, sw:250, sh:325 },
-  rh_arrow_left: { sx:3375,   sy:475, sw:320, sh:288 },
-  rh_arrow_right: { sx:3703,   sy:475, sw:320, sh:288 },
-  rh_judge_perfect: { sx:2828,   sy:788, sw:1305, sh:275 },
-  rh_judge_good: { sx:2836,   sy:1075, sw:805, sh:238 },
-  rh_judge_miss: { sx:2836,   sy:1309, sw:930, sh:313 },
+
+
+plat_blue_top:  { sx:1344, sy:2820, sw:367, sh:338 },
+plat_blue_body: { sx:930,  sy:2825, sw:367, sh:363 },
+plat_purple_top:  { sx:1344, sy:3250, sw:359, sh:350 },
+plat_purple_body: { sx:938,  sy:3250, sw:359, sh:338 },
+plat_red_top:  { sx:1352, sy:2425, sw:359, sh:350 },
+plat_red_body: { sx:938,  sy:2438, sw:359, sh:338 },
+
+
+
+
+rocket: { sx:86, sy:13, sw:414, sh:738 },
+bullet: { sx:766, sy:3688, sw:469, sh:375 },
+
+
+
+
+asteroid1: { sx:1188, sy:1888, sw:570, sh:488 },
+asteroid2: { sx:1828, sy:1250, sw:891, sh:675 },
+asteroid3: { sx:1164, sy:1475, sw:641, sh:400 },
+asteroid4: { sx:1867, sy:438,  sw:859, sh:738 },
+
+
+
+
+power_shield: { sx:0,   sy:1625, sw:492, sh:613 },
+power_rapid:  { sx:3508, sy:3000, sw:484, sh:600 },
+
+
+
+
+rh_arrow_up: { sx:2883,   sy:450, sw:250, sh:325 },
+rh_arrow_down: { sx:3133,   sy:450, sw:250, sh:325 },
+rh_arrow_left: { sx:3375,   sy:475, sw:320, sh:288 },
+rh_arrow_right: { sx:3703,   sy:475, sw:320, sh:288 },
+rh_judge_perfect: { sx:2828,   sy:788, sw:1305, sh:275 },
+rh_judge_good: { sx:2836,   sy:1075, sw:805, sh:238 },
+rh_judge_miss: { sx:2836,   sy:1309, sw:930, sh:313 },
 };
 
+
+
+
 function drawSprite(spriteKey, dx, dy, dw, dh) {
-  const s = SPRITES[spriteKey];
-  if (!s || !assets.sheet) return;
-  ctx.drawImage(assets.sheet, s.sx, s.sy, s.sw, s.sh, dx, dy, dw, dh);
+ const s = SPRITES[spriteKey];
+ if (!s || !assets.sheet) return;
+ ctx.drawImage(assets.sheet, s.sx, s.sy, s.sw, s.sh, dx, dy, dw, dh);
 }
 
+
 /* ============================================================
-   PLATFORM TILE RENDERING
-   - Platforms are built from repeated top/body sprite tiles.
+  PLATFORM TILE RENDERING
+  - Platforms are built from repeated top/body sprite tiles.
 ============================================================ */
 const PLATFORM_TILE_W = 16;
 const PLATFORM_TOP_H  = 10;
 const PLATFORM_BODY_H = 10;
 
+
 function getPlatformSpriteKeysForLevel() {
-  if (stagePart === 0) return { top: "plat_blue_top",   body: "plat_blue_body" };
-  if (stagePart === 1) return { top: "plat_purple_top", body: "plat_purple_body" };
-  return { top: "plat_red_top", body: "plat_red_body" };
+ if (stagePart === 0) return { top: "plat_blue_top",   body: "plat_blue_body" };
+ if (stagePart === 1) return { top: "plat_purple_top", body: "plat_purple_body" };
+ return { top: "plat_red_top", body: "plat_red_body" };
 }
+
 
 function drawTile(spriteKey, dx, dy, destW, destH) {
-  const s = SPRITES[spriteKey];
-  if (!s || !assets.sheet) return false;
-  if (destW <= 0 || destH <= 0) return false;
-  ctx.drawImage(assets.sheet, s.sx, s.sy, s.sw, s.sh, dx, dy, destW, destH);
-  return true;
+ const s = SPRITES[spriteKey];
+ if (!s || !assets.sheet) return false;
+ if (destW <= 0 || destH <= 0) return false;
+ ctx.drawImage(assets.sheet, s.sx, s.sy, s.sw, s.sh, dx, dy, destW, destH);
+ return true;
 }
+
 
 function drawPlatformWithTopAndBody(p) {
-  const keys = getPlatformSpriteKeysForLevel();
+ const keys = getPlatformSpriteKeysForLevel();
 
-  if (!SPRITES[keys.top] || !SPRITES[keys.body] || !assets.sheet) {
-    ctx.fillStyle = "#666";
-    ctx.fillRect(p.x, p.y, p.width, p.height);
-    return;
-  }
 
-  const topH = Math.min(PLATFORM_TOP_H, p.height);
-  const bodyTotalH = p.height - topH;
+ if (!SPRITES[keys.top] || !SPRITES[keys.body] || !assets.sheet) {
+   ctx.fillStyle = "#666";
+   ctx.fillRect(p.x, p.y, p.width, p.height);
+   return;
+ }
 
-  for (let xx = p.x; xx < p.x + p.width; xx += PLATFORM_TILE_W) {
-    const remainingW = (p.x + p.width) - xx;
-    const dw = Math.min(PLATFORM_TILE_W, remainingW);
 
-    drawTile(keys.top, xx, p.y, dw, topH);
+ const topH = Math.min(PLATFORM_TOP_H, p.height);
+ const bodyTotalH = p.height - topH;
 
-    let yy = p.y + topH;
-    let remainingH = bodyTotalH;
-    while (remainingH > 0) {
-      const dh = Math.min(PLATFORM_BODY_H, remainingH);
-      drawTile(keys.body, xx, yy, dw, dh);
-      yy += dh;
-      remainingH -= dh;
-    }
-  }
+
+ for (let xx = p.x; xx < p.x + p.width; xx += PLATFORM_TILE_W) {
+   const remainingW = (p.x + p.width) - xx;
+   const dw = Math.min(PLATFORM_TILE_W, remainingW);
+
+
+   drawTile(keys.top, xx, p.y, dw, topH);
+
+
+   let yy = p.y + topH;
+   let remainingH = bodyTotalH;
+   while (remainingH > 0) {
+     const dh = Math.min(PLATFORM_BODY_H, remainingH);
+     drawTile(keys.body, xx, yy, dw, dh);
+     yy += dh;
+     remainingH -= dh;
+   }
+ }
 }
 
+
 /* ============================================================
-   IN-GAME SPRITE PICKER
-   - Debug tool for selecting sprite rectangles from the sheet.
-   - When enabled, shows cursor + drag selection + recent results.
+  IN-GAME SPRITE PICKER
+  - Debug tool for selecting sprite rectangles from the sheet.
+  - When enabled, shows cursor + drag selection + recent results.
 ============================================================ */
 let pickerOn = false;
 let pickStart = null;
 let pickEnd = null;
 let mouse = { x: 0, y: 0 };
 
+
 let pickReadout = "";
 let pickHistory = [];
 
+
 function canvasMousePos(e) {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  return {
-    x: Math.floor((e.clientX - rect.left) * scaleX),
-    y: Math.floor((e.clientY - rect.top) * scaleY)
-  };
+ const rect = canvas.getBoundingClientRect();
+ const scaleX = canvas.width / rect.width;
+ const scaleY = canvas.height / rect.height;
+ return {
+   x: Math.floor((e.clientX - rect.left) * scaleX),
+   y: Math.floor((e.clientY - rect.top) * scaleY)
+ };
 }
 
+
 canvas.addEventListener("mousemove", (e) => {
-  const p = canvasMousePos(e);
-  mouse.x = p.x;
-  mouse.y = p.y;
-  if (pickerOn && pickStart) pickEnd = { x: mouse.x, y: mouse.y };
+ const p = canvasMousePos(e);
+ mouse.x = p.x;
+ mouse.y = p.y;
+ if (pickerOn && pickStart) pickEnd = { x: mouse.x, y: mouse.y };
 });
+
 
 canvas.addEventListener("mousedown", (e) => {
-  if (!pickerOn) return;
-  const p = canvasMousePos(e);
-  pickStart = { x: p.x, y: p.y };
-  pickEnd = { x: p.x, y: p.y };
+ if (!pickerOn) return;
+ const p = canvasMousePos(e);
+ pickStart = { x: p.x, y: p.y };
+ pickEnd = { x: p.x, y: p.y };
 });
+
 
 canvas.addEventListener("mouseup", (e) => {
-  if (!pickerOn || !pickStart) return;
+ if (!pickerOn || !pickStart) return;
 
-  const p = canvasMousePos(e);
-  pickEnd = { x: p.x, y: p.y };
 
-  const x1 = Math.min(pickStart.x, pickEnd.x);
-  const y1 = Math.min(pickStart.y, pickEnd.y);
-  const x2 = Math.max(pickStart.x, pickEnd.x);
-  const y2 = Math.max(pickStart.y, pickEnd.y);
+ const p = canvasMousePos(e);
+ pickEnd = { x: p.x, y: p.y };
 
-  const img = assets.sheet;
-  if (!img) {
-    pickReadout = "Sprite sheet not loaded.";
-  } else {
-    const scaleX = img.width / canvas.width;
-    const scaleY = img.height / canvas.height;
 
-    const rect = {
-      sx: Math.round(x1 * scaleX),
-      sy: Math.round(y1 * scaleY),
-      sw: Math.max(1, Math.round((x2 - x1) * scaleX)),
-      sh: Math.max(1, Math.round((y2 - y1) * scaleY))
-    };
+ const x1 = Math.min(pickStart.x, pickEnd.x);
+ const y1 = Math.min(pickStart.y, pickEnd.y);
+ const x2 = Math.max(pickStart.x, pickEnd.x);
+ const y2 = Math.max(pickStart.y, pickEnd.y);
 
-    pickReadout = `SPRITE RECT: { sx:${rect.sx}, sy:${rect.sy}, sw:${rect.sw}, sh:${rect.sh} }`;
 
-    pickHistory.unshift(pickReadout);
-    if (pickHistory.length > 8) pickHistory.pop();
-  }
+ const img = assets.sheet;
+ if (!img) {
+   pickReadout = "Sprite sheet not loaded.";
+ } else {
+   const scaleX = img.width / canvas.width;
+   const scaleY = img.height / canvas.height;
 
-  pickStart = null;
-  pickEnd = null;
+
+   const rect = {
+     sx: Math.round(x1 * scaleX),
+     sy: Math.round(y1 * scaleY),
+     sw: Math.max(1, Math.round((x2 - x1) * scaleX)),
+     sh: Math.max(1, Math.round((y2 - y1) * scaleY))
+   };
+
+
+   pickReadout = `SPRITE RECT: { sx:${rect.sx}, sy:${rect.sy}, sw:${rect.sw}, sh:${rect.sh} }`;
+
+
+   pickHistory.unshift(pickReadout);
+   if (pickHistory.length > 8) pickHistory.pop();
+ }
+
+
+ pickStart = null;
+ pickEnd = null;
 });
+
 
 window.addEventListener("keydown", (e) => {
-  
 
-  if (pickerOn) return;
 
-  if (currentState === GAME_STATE.RHYTHM) {
-    if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
-      rhythmHitAttempt(e.key);
-    }
-  }
+ if (pickerOn) return;
+
+
+ if (currentState === GAME_STATE.RHYTHM) {
+   if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+     rhythmHitAttempt(e.key);
+   }
+ }
 });
+
 
 /* Draws the sprite-sheet picker overlay when enabled. */
 function drawPickerOverlay() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+ ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (!assets.sheet) {
-    ctx.fillStyle = "white";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "14px monospace";
-    ctx.fillText("Loading sprite sheet...", canvas.width / 2, canvas.height / 2);
-    return;
-  }
 
-  ctx.drawImage(assets.sheet, 0, 0, canvas.width, canvas.height);
+ if (!assets.sheet) {
+   ctx.fillStyle = "white";
+   ctx.textAlign = "center";
+   ctx.textBaseline = "middle";
+   ctx.font = "14px monospace";
+   ctx.fillText("Loading sprite sheet...", canvas.width / 2, canvas.height / 2);
+   return;
+ }
 
-  ctx.strokeStyle = "white";
-  ctx.strokeRect(mouse.x - 1, mouse.y - 1, 2, 2);
 
-  if (pickStart && pickEnd) {
-    const x1 = Math.min(pickStart.x, pickEnd.x);
-    const y1 = Math.min(pickStart.y, pickEnd.y);
-    const x2 = Math.max(pickStart.x, pickEnd.x);
-    const y2 = Math.max(pickStart.y, pickEnd.y);
+ ctx.drawImage(assets.sheet, 0, 0, canvas.width, canvas.height);
 
-    ctx.strokeStyle = "white";
-    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-  }
 
-  const hudHeight = 90;
-  const hudY = canvas.height - hudHeight;
+ ctx.strokeStyle = "white";
+ ctx.strokeRect(mouse.x - 1, mouse.y - 1, 2, 2);
 
-  ctx.fillStyle = "rgba(0,0,0,0.7)";
-  ctx.fillRect(0, hudY, canvas.width, hudHeight);
 
-  ctx.fillStyle = "white";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.font = "12px monospace";
+ if (pickStart && pickEnd) {
+   const x1 = Math.min(pickStart.x, pickEnd.x);
+   const y1 = Math.min(pickStart.y, pickEnd.y);
+   const x2 = Math.max(pickStart.x, pickEnd.x);
+   const y2 = Math.max(pickStart.y, pickEnd.y);
 
-  let textY = hudY + 6;
 
-  ctx.fillText(`PICKER ON | Mouse x=${mouse.x} y=${mouse.y} | Drag to select`, 8, textY);
-  textY += 18;
+   ctx.strokeStyle = "white";
+   ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+ }
 
-  if (pickReadout) {
-    ctx.fillText(pickReadout, 8, textY);
-    textY += 18;
-  }
 
-  if (pickHistory.length) {
-    ctx.fillText("Recent:", 8, textY);
-    textY += 14;
+ const hudHeight = 90;
+ const hudY = canvas.height - hudHeight;
 
-    for (let i = 0; i < Math.min(3, pickHistory.length); i++) {
-      ctx.fillText(pickHistory[i], 8, textY);
-      textY += 14;
-    }
-  }
+
+ ctx.fillStyle = "rgba(0,0,0,0.7)";
+ ctx.fillRect(0, hudY, canvas.width, hudHeight);
+
+
+ ctx.fillStyle = "white";
+ ctx.textAlign = "left";
+ ctx.textBaseline = "top";
+ ctx.font = "12px monospace";
+
+
+ let textY = hudY + 6;
+
+
+ ctx.fillText(`PICKER ON | Mouse x=${mouse.x} y=${mouse.y} | Drag to select`, 8, textY);
+ textY += 18;
+
+
+ if (pickReadout) {
+   ctx.fillText(pickReadout, 8, textY);
+   textY += 18;
+ }
+
+
+ if (pickHistory.length) {
+   ctx.fillText("Recent:", 8, textY);
+   textY += 14;
+
+
+   for (let i = 0; i < Math.min(3, pickHistory.length); i++) {
+     ctx.fillText(pickHistory[i], 8, textY);
+     textY += 14;
+   }
+ }
 }
 
+
 /* ============================================================
-   PLATFORMER MODE (LEVEL 1)
-   - Player movement, gravity, platform collision, star pickup.
+  PLATFORMER MODE (LEVEL 1)
+  - Player movement, gravity, platform collision, star pickup.
 ============================================================ */
 const player = {
-  x: 50,
-  y: 250,
-  width: 16,
-  height: 16,
-  vx: 0,
-  vy: 0,
-  speed: 2.5,
-  jumpPower: 6,
-  onGround: false
+ x: 50,
+ y: 250,
+ width: 16,
+ height: 16,
+ vx: 0,
+ vy: 0,
+ speed: 2.5,
+ jumpPower: 6,
+ onGround: false
 };
+
 
 let facing = "right";
 let walkTimer = 0;
 let footstepTimer = 0;
 
+
 const gravity = 0.2;
 
+
 const platformerLevels = [
-  {
-    platforms: [
-      { x: 0,   y: 330, width: 640, height: 30 },
-      { x: 120, y: 260, width: 80,  height: 10 },
-      { x: 260, y: 210, width: 80,  height: 10 },
-      { x: 400, y: 160, width: 80,  height: 10 }
-    ],
-    star: { x: 430, y: 120, size: 10 }
-  },
-  {
-    platforms: [
-      { x: 0,   y: 330, width: 640, height: 30 },
-      { x: 250, y: 285, width: 50,  height: 10 },
-      { x: 350, y: 235, width: 50,  height: 10 },
-      { x: 450, y: 190, width: 50,  height: 10 },
-      { x: 350, y: 125, width: 50,  height: 10 },
-      { x: 130, y: 150, width: 50,  height: 10 },
-      { x: 260, y: 50,  width: 50,  height: 10 },
-      { x: 50,  y: 240, width: 50,  height: 10 }
-    ],
-    star: { x: 68, y: 215, size: 10 }
-  },
-  {
-    platforms: [
-      { x: 0,   y: 330, width: 640, height: 30 },
-      { x: 20,  y: 170, width: 50,  height: 10 },
-      { x: 170, y: 95,  width: 50,  height: 10 },
-      { x: 290, y: 130, width: 50,  height: 10 },
-      { x: 460, y: 140, width: 50,  height: 10 },
-      { x: 530, y: 230, width: 50,  height: 10 },
-      { x: 590, y: 185, width: 50,  height: 10 },
-      { x: 370, y: 230, width: 50,  height: 10 },
-      { x: 250, y: 235, width: 50,  height: 10 },
-      { x: 140, y: 275, width: 50,  height: 10 }
-    ],
-    star: { x: 35, y: 140, size: 10 }
-  }
+ {
+   platforms: [
+     { x: 0,   y: 330, width: 640, height: 30 },
+     { x: 120, y: 260, width: 80,  height: 10 },
+     { x: 260, y: 210, width: 80,  height: 10 },
+     { x: 400, y: 160, width: 80,  height: 10 }
+   ],
+   star: { x: 430, y: 120, size: 10 }
+ },
+ {
+   platforms: [
+     { x: 0,   y: 330, width: 640, height: 30 },
+     { x: 250, y: 285, width: 50,  height: 10 },
+     { x: 350, y: 235, width: 50,  height: 10 },
+     { x: 450, y: 190, width: 50,  height: 10 },
+     { x: 350, y: 125, width: 50,  height: 10 },
+     { x: 130, y: 150, width: 50,  height: 10 },
+     { x: 260, y: 50,  width: 50,  height: 10 },
+     { x: 50,  y: 240, width: 50,  height: 10 }
+   ],
+   star: { x: 68, y: 215, size: 10 }
+ },
+ {
+   platforms: [
+     { x: 0,   y: 330, width: 640, height: 30 },
+     { x: 20,  y: 170, width: 50,  height: 10 },
+     { x: 170, y: 95,  width: 50,  height: 10 },
+     { x: 290, y: 130, width: 50,  height: 10 },
+     { x: 460, y: 140, width: 50,  height: 10 },
+     { x: 530, y: 230, width: 50,  height: 10 },
+     { x: 590, y: 185, width: 50,  height: 10 },
+     { x: 370, y: 230, width: 50,  height: 10 },
+     { x: 250, y: 235, width: 50,  height: 10 },
+     { x: 140, y: 275, width: 50,  height: 10 }
+   ],
+   star: { x: 35, y: 140, size: 10 }
+ }
 ];
+
 
 let platforms = platformerLevels[stagePart].platforms;
 
+
 const star = {
-  x: platformerLevels[stagePart].star.x,
-  y: platformerLevels[stagePart].star.y,
-  size: platformerLevels[stagePart].star.size,
-  collected: false
+ x: platformerLevels[stagePart].star.x,
+ y: platformerLevels[stagePart].star.y,
+ size: platformerLevels[stagePart].star.size,
+ collected: false
 };
+
 
 /* Loads a specific platformer sublevel (a, b, or c). */
 function loadPlatformerSublevel(partIndex) {
-  stageNumber = 1;
-  stagePart = partIndex;
+ stageNumber = 1;
+ stagePart = partIndex;
 
-  platforms = platformerLevels[stagePart].platforms;
 
-  star.x = platformerLevels[stagePart].star.x;
-  star.y = platformerLevels[stagePart].star.y;
-  star.size = platformerLevels[stagePart].star.size;
-  star.collected = false;
+ platforms = platformerLevels[stagePart].platforms;
 
-  resetPlatformer();
+
+ star.x = platformerLevels[stagePart].star.x;
+ star.y = platformerLevels[stagePart].star.y;
+ star.size = platformerLevels[stagePart].star.size;
+ star.collected = false;
+
+
+ resetPlatformer();
 }
 
+
 /* ============================================================
-   SHOOTER MODE (LEVEL 2)
-   - Move ship, shoot meteors, collect powerups, spawn star.
+  SHOOTER MODE (LEVEL 2)
+  - Move ship, shoot meteors, collect powerups, spawn star.
 ============================================================ */
 const ship = {
-  x: 320,
-  y: 320,
-  w: 36,
-  h: 36,
-  speed: 3.0,
-  cooldown: 0,
-  shield: 0,
-  rapidTimer: 0
+ x: 320,
+ y: 320,
+ w: 36,
+ h: 36,
+ speed: 3.0,
+ cooldown: 0,
+ shield: 0,
+ rapidTimer: 0
 };
+
 
 let lives = 3;
 let bullets = [];
@@ -592,902 +702,1069 @@ let powerups = [];
 let points = 0;
 let invulnTimer = 0;
 
+
 const ASTEROID_SCALE = 1.6;
 const ASTRONAUT_SCALE = 1.8;
 const BULLET_SCALE = 1.0;
 const POWERUP_SCALE = 1.6;
 
+
 let meteorSpawnTimer = 0;
 let starActive = false;
 const shooterStar = { x: 320, y: 40, size: 12 };
 
+
 const shooterLevels = [
-  { spawnEvery: 52, speedMin: 1.3, speedMax: 2.0, killsToStar: 10, powerupChance: 0.20 },
-  { spawnEvery: 42, speedMin: 1.6, speedMax: 2.6, killsToStar: 15, powerupChance: 0.20 },
-  { spawnEvery: 20, speedMin: 2.0, speedMax: 3.2, killsToStar: 20, powerupChance: 0.20 }
+ { spawnEvery: 52, speedMin: 1.3, speedMax: 2.0, killsToStar: 10, powerupChance: 0.20 },
+ { spawnEvery: 42, speedMin: 1.6, speedMax: 2.6, killsToStar: 15, powerupChance: 0.20 },
+ { spawnEvery: 20, speedMin: 2.0, speedMax: 3.2, killsToStar: 20, powerupChance: 0.20 }
 ];
+
 
 /* Resets a shooter wave back to its starting values. */
 function resetShooterWave() {
-  ship.x = 320;
-  ship.y = 320;
-  ship.cooldown = 0;
-  ship.shield = 0;
-  ship.rapidTimer = 0;
+ ship.x = 320;
+ ship.y = 320;
+ ship.cooldown = 0;
+ ship.shield = 0;
+ ship.rapidTimer = 0;
 
-  bullets = [];
-  meteors = [];
-  powerups = [];
 
-  points = 0;
-  meteorSpawnTimer = 0;
-  starActive = false;
-  shooterStar.x = 320;
-  shooterStar.y = 40;
+ bullets = [];
+ meteors = [];
+ powerups = [];
+
+
+ points = 0;
+ meteorSpawnTimer = 0;
+ starActive = false;
+ shooterStar.x = 320;
+ shooterStar.y = 40;
 }
+
 
 /* Loads a shooter sublevel (a, b, or c). */
 function loadShooterSublevel(partIndex) {
-  stageNumber = 2;
-  stagePart = partIndex;
-  resetShooterWave(true);
+ stageNumber = 2;
+ stagePart = partIndex;
+ resetShooterWave(true);
 }
+
 
 /* Starts Level 2 from the first shooter sublevel. */
 function startShooterFromBeginning() {
-  lives = 3;
-  loadShooterSublevel(0);
-  currentState = GAME_STATE.SHOOTER;
+ lives = 3;
+ loadShooterSublevel(0);
+ currentState = GAME_STATE.SHOOTER;
 }
 
+
 /* ============================================================
-   RHYTHM MODE (LEVEL 3)
-   - Spawn falling notes and score hits within timing windows.
-   - After clearing a part, the game enters a star-collection phase.
+  RHYTHM MODE (LEVEL 3)
+  - Spawn falling notes and score hits within timing windows.
+  - After clearing a part, the game enters a star-collection phase.
 ============================================================ */
 const rhythmLevels = [
-  { durationSec: 25, spawnEveryFrames: 32, noteSpeed: 1.6, perfectWindow: 6, goodWindow: 14, targetScore: 20,
-    lanes: ["ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight"], patternMode: "mixed" },
-  { durationSec: 25, spawnEveryFrames: 28, noteSpeed: 1.7, perfectWindow: 6, goodWindow: 14, targetScore: 30,
-    lanes: ["ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight"], patternMode: "mixed" },
-  { durationSec: 25, spawnEveryFrames: 27, noteSpeed: 2.3, perfectWindow: 5, goodWindow: 12, targetScore: 40,
-    lanes: ["ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight"], patternMode: "pattern" }
+ { durationSec: 25, spawnEveryFrames: 32, noteSpeed: 1.6, perfectWindow: 6, goodWindow: 14, targetScore: 20,
+   lanes: ["ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight"], patternMode: "mixed" },
+ { durationSec: 25, spawnEveryFrames: 28, noteSpeed: 1.7, perfectWindow: 6, goodWindow: 14, targetScore: 30,
+   lanes: ["ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight"], patternMode: "mixed" },
+ { durationSec: 25, spawnEveryFrames: 27, noteSpeed: 2.3, perfectWindow: 5, goodWindow: 12, targetScore: 40,
+   lanes: ["ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight"], patternMode: "pattern" }
 ];
 
-let rhythm = {
-  timerFrames: 0,
-  spawnTimer: 0,
-  score: 0,
-  moves: 0,
-  streak: 0,
-  notes: [],
-  judgeText: "",
-  judgeTimer: 0,
-  patternIndex: 0,
 
-  phase: "play", // "play" or "star"
-  star: { x: 320, y: 140, size: 16, bob: 0 }
+let rhythm = {
+ timerFrames: 0,
+ spawnTimer: 0,
+ score: 0,
+ moves: 0,
+ streak: 0,
+ notes: [],
+ judgeText: "",
+ judgeTimer: 0,
+ patternIndex: 0,
+
+
+ phase: "play", // "play" or "star"
+ star: { x: 320, y: 140, size: 16, bob: 0 }
 };
+
 
 const RH_HIT_Y = 280;
 const RH_SPAWN_Y = -20;
 const RH_NOTE_SIZE = 24;
 
+
 const RH_LANE_X = {
-  ArrowLeft:  220,
-  ArrowDown:  270,
-  ArrowUp:    320,
-  ArrowRight: 370
+ ArrowLeft:  220,
+ ArrowDown:  270,
+ ArrowUp:    320,
+ ArrowRight: 370
 };
 
+
 const RH_PATTERN = [
-  "ArrowLeft","ArrowDown","ArrowUp","ArrowRight",
-  "ArrowUp","ArrowDown","ArrowLeft","ArrowRight",
-  "ArrowLeft","ArrowLeft","ArrowDown","ArrowUp",
-  "ArrowRight","ArrowUp","ArrowDown","ArrowRight"
+ "ArrowLeft","ArrowDown","ArrowUp","ArrowRight",
+ "ArrowUp","ArrowDown","ArrowLeft","ArrowRight",
+ "ArrowLeft","ArrowLeft","ArrowDown","ArrowUp",
+ "ArrowRight","ArrowUp","ArrowDown","ArrowRight"
 ];
+
 
 /* Resets the current rhythm sublevel back to its starting values. */
 function resetRhythmLevel() {
-  rhythm.timerFrames = 0;
-  rhythm.spawnTimer = 0;
-  rhythm.score = 0;
-  rhythm.moves = 0;
-  rhythm.streak = 0;
-  rhythm.notes = [];
-  rhythm.judgeText = "";
-  rhythm.judgeTimer = 0;
-  rhythm.patternIndex = 0;
+ rhythm.timerFrames = 0;
+ rhythm.spawnTimer = 0;
+ rhythm.score = 0;
+ rhythm.moves = 0;
+ rhythm.streak = 0;
+ rhythm.notes = [];
+ rhythm.judgeText = "";
+ rhythm.judgeTimer = 0;
+ rhythm.patternIndex = 0;
 
-  rhythm.phase = "play";
-  rhythm.star.x = 320;
-  rhythm.star.y = 140;
-  rhythm.star.size = 16;
-  rhythm.star.bob = 0;
+
+ rhythm.phase = "play";
+ rhythm.star.x = 320;
+ rhythm.star.y = 140;
+ rhythm.star.size = 16;
+ rhythm.star.bob = 0;
 }
+
 
 /* Starts Level 3 from the first rhythm sublevel. */
 function startRhythmFromBeginning() {
-  stageNumber = 3;
-  stagePart = 0;
-  resetRhythmLevel();
-  currentState = GAME_STATE.RHYTHM;
+ stageNumber = 3;
+ stagePart = 0;
+ resetRhythmLevel();
+ currentState = GAME_STATE.RHYTHM;
 }
+
 
 /* Loads a rhythm sublevel (a, b, or c). */
 function loadRhythmSublevel(partIndex) {
-  stageNumber = 3;
-  stagePart = partIndex;
-  resetRhythmLevel();
-  currentState = GAME_STATE.RHYTHM;
+ stageNumber = 3;
+ stagePart = partIndex;
+ resetRhythmLevel();
+ currentState = GAME_STATE.RHYTHM;
 }
+
 
 /* Chooses the next lane to spawn a note in, based on the config mode. */
 function pickNextLane(cfg) {
-  if (cfg.patternMode === "random") return cfg.lanes[Math.floor(Math.random() * cfg.lanes.length)];
-  if (cfg.patternMode === "pattern") {
-    const lane = RH_PATTERN[rhythm.patternIndex % RH_PATTERN.length];
-    rhythm.patternIndex++;
-    return lane;
-  }
-  if (Math.random() < 0.75) {
-    const lane = RH_PATTERN[rhythm.patternIndex % RH_PATTERN.length];
-    rhythm.patternIndex++;
-    return lane;
-  }
-  return cfg.lanes[Math.floor(Math.random() * cfg.lanes.length)];
+ if (cfg.patternMode === "random") return cfg.lanes[Math.floor(Math.random() * cfg.lanes.length)];
+ if (cfg.patternMode === "pattern") {
+   const lane = RH_PATTERN[rhythm.patternIndex % RH_PATTERN.length];
+   rhythm.patternIndex++;
+   return lane;
+ }
+ if (Math.random() < 0.75) {
+   const lane = RH_PATTERN[rhythm.patternIndex % RH_PATTERN.length];
+   rhythm.patternIndex++;
+   return lane;
+ }
+ return cfg.lanes[Math.floor(Math.random() * cfg.lanes.length)];
 }
+
 
 /* Draws a rhythm note using either sprite-sheet arrows or a fallback block. */
 function drawRhythmNoteSprite(laneKey, cx, cy, size) {
-  const half = size / 2;
-  const dx = cx - half;
-  const dy = cy - half;
+ const half = size / 2;
+ const dx = cx - half;
+ const dy = cy - half;
 
-  let key = null;
-  if (laneKey === "ArrowUp") key = "rh_arrow_up";
-  else if (laneKey === "ArrowDown") key = "rh_arrow_down";
-  else if (laneKey === "ArrowLeft") key = "rh_arrow_left";
-  else if (laneKey === "ArrowRight") key = "rh_arrow_right";
 
-  if (key && SPRITES[key] && assets.sheet) {
-    drawSprite(key, dx, dy, size, size);
-    return;
-  }
+ let key = null;
+ if (laneKey === "ArrowUp") key = "rh_arrow_up";
+ else if (laneKey === "ArrowDown") key = "rh_arrow_down";
+ else if (laneKey === "ArrowLeft") key = "rh_arrow_left";
+ else if (laneKey === "ArrowRight") key = "rh_arrow_right";
 
-  if (laneKey === "ArrowLeft")  ctx.fillStyle = "#ff66ff";
-  if (laneKey === "ArrowDown")  ctx.fillStyle = "#ffe066";
-  if (laneKey === "ArrowUp")    ctx.fillStyle = "#66ffff";
-  if (laneKey === "ArrowRight") ctx.fillStyle = "#66ff66";
-  ctx.fillRect(dx, dy, size, size);
+
+ if (key && SPRITES[key] && assets.sheet) {
+   drawSprite(key, dx, dy, size, size);
+   return;
+ }
+
+
+ if (laneKey === "ArrowLeft")  ctx.fillStyle = "#ff66ff";
+ if (laneKey === "ArrowDown")  ctx.fillStyle = "#ffe066";
+ if (laneKey === "ArrowUp")    ctx.fillStyle = "#66ffff";
+ if (laneKey === "ArrowRight") ctx.fillStyle = "#66ff66";
+ ctx.fillRect(dx, dy, size, size);
 }
+
 
 /* Draws the current judgment sprite ("PERFECT", "GOOD", or "MISS"). */
 function drawRhythmJudgment() {
-  if (rhythm.judgeTimer <= 0) return;
+ if (rhythm.judgeTimer <= 0) return;
 
-  const centerX = canvas.width / 2;
-  const y = 95;
 
-  let key = null;
-  let w = 140, h = 50;
-  let offsetX = 0;
+ const centerX = canvas.width / 2;
+ const y = 95;
 
-  if (rhythm.judgeText === "PERFECT") { key = "rh_judge_perfect"; w = 170; h = 50; offsetX = -25; }
-  else if (rhythm.judgeText === "GOOD") { key = "rh_judge_good"; w = 140; h = 50; offsetX = -20; }
-  else { key = "rh_judge_miss"; w = 140; h = 50; offsetX = -25; }
 
-  if (key && SPRITES[key] && assets.sheet) {
-    drawSprite(key, centerX - w / 2 + offsetX, y, w, h);
-  }
+ let key = null;
+ let w = 140, h = 50;
+ let offsetX = 0;
+
+
+ if (rhythm.judgeText === "PERFECT") { key = "rh_judge_perfect"; w = 170; h = 50; offsetX = -25; }
+ else if (rhythm.judgeText === "GOOD") { key = "rh_judge_good"; w = 140; h = 50; offsetX = -20; }
+ else { key = "rh_judge_miss"; w = 140; h = 50; offsetX = -25; }
+
+
+ if (key && SPRITES[key] && assets.sheet) {
+   drawSprite(key, centerX - w / 2 + offsetX, y, w, h);
+ }
 }
+
 
 /* Records a judgment and applies scoring/streak changes. */
 function registerJudgment(text, addScore, streakDelta) {
-  rhythm.judgeText = text;
-  rhythm.judgeTimer = 30;
+ rhythm.judgeText = text;
+ rhythm.judgeTimer = 30;
 
-  if (text === "PERFECT") AudioMan.playSFX("coin", 0.55);
-  else if (text === "GOOD") AudioMan.playSFX("powerup", 0.45);
-  else AudioMan.playSFX("wrong", 0.55);
 
-  rhythm.score = Math.max(0, rhythm.score + addScore);
-  rhythm.streak = Math.max(0, rhythm.streak + streakDelta);
+ if (text === "PERFECT") AudioMan.playSFX("coin", 0.55);
+ else if (text === "GOOD") AudioMan.playSFX("powerup", 0.45);
+ else AudioMan.playSFX("wrong", 0.55);
+
+
+ rhythm.score = Math.max(0, rhythm.score + addScore);
+ rhythm.streak = Math.max(0, rhythm.streak + streakDelta);
 }
+
 
 /* Handles an attempted hit when the player presses an arrow key. */
 function rhythmHitAttempt(key) {
-  if (rhythm.phase !== "play") return;
+ if (rhythm.phase !== "play") return;
 
-  const cfg = rhythmLevels[stagePart];
-  rhythm.moves++;
 
-  let bestIndex = -1;
-  let bestDist = Infinity;
+ const cfg = rhythmLevels[stagePart];
+ rhythm.moves++;
 
-  for (let i = 0; i < rhythm.notes.length; i++) {
-    const n = rhythm.notes[i];
-    if (n.hit) continue;
-    if (n.laneKey !== key) continue;
 
-    const dist = Math.abs(n.y - RH_HIT_Y);
-    if (dist < bestDist) {
-      bestDist = dist;
-      bestIndex = i;
-    }
-  }
+ let bestIndex = -1;
+ let bestDist = Infinity;
 
-  if (bestIndex === -1) { registerJudgment("MISS", -1, -2); return; }
 
-  if (bestDist <= cfg.perfectWindow) { rhythm.notes[bestIndex].hit = true; registerJudgment("PERFECT", 2, +1); return; }
-  if (bestDist <= cfg.goodWindow)    { rhythm.notes[bestIndex].hit = true; registerJudgment("GOOD", 1, +1); return; }
+ for (let i = 0; i < rhythm.notes.length; i++) {
+   const n = rhythm.notes[i];
+   if (n.hit) continue;
+   if (n.laneKey !== key) continue;
 
-  registerJudgment("MISS", -1, -2);
+
+   const dist = Math.abs(n.y - RH_HIT_Y);
+   if (dist < bestDist) {
+     bestDist = dist;
+     bestIndex = i;
+   }
+ }
+
+
+ if (bestIndex === -1) { registerJudgment("MISS", -1, -2); return; }
+
+
+ if (bestDist <= cfg.perfectWindow) { rhythm.notes[bestIndex].hit = true; registerJudgment("PERFECT", 2, +1); return; }
+ if (bestDist <= cfg.goodWindow)    { rhythm.notes[bestIndex].hit = true; registerJudgment("GOOD", 1, +1); return; }
+
+
+ registerJudgment("MISS", -1, -2);
 }
 
+
 /* ============================================================
-   MAIN LOOP
-   - update: advances game logic
-   - draw: renders the current state
+  MAIN LOOP
+  - update: advances game logic
+  - draw: renders the current state
 ============================================================ */
 let _prevStateForAudio = currentState;
 
+
 function gameLoop() {
-  update();
+ update();
 
-  if (currentState !== _prevStateForAudio) {
-    AudioMan.setBGMForState(currentState);
-    _prevStateForAudio = currentState;
-  }
 
-  draw();
-  requestAnimationFrame(gameLoop);
+ if (currentState !== _prevStateForAudio) {
+   AudioMan.setBGMForState(currentState);
+   _prevStateForAudio = currentState;
+ }
+
+
+ draw();
+ requestAnimationFrame(gameLoop);
 }
 
+
 /* ============================================================
-   UPDATE LOGIC
-   - Runs the logic for the current state each frame.
+  UPDATE LOGIC
+  - Runs the logic for the current state each frame.
 ============================================================ */
 function update() {
-  switch (currentState) {
-    case GAME_STATE.TITLE:
-      if (keys["Enter"]) {
-        keys["Enter"] = false;
-        startNewGameFromTitle();
-      }
-      break;
-
-    case GAME_STATE.GAME_OVER: {
-      if (keys["Enter"]) {
-        keys["Enter"] = false;
-        startNewGameFromTitle();
-      }
-
-      if (keys["r"] || keys["R"]) {
-        keys["r"] = false; keys["R"] = false;
-
-        if (gameOverFromState === GAME_STATE.SHOOTER) {
-          starsCollected = 0;
-          lives = 3;
-          startShooterFromBeginning();
-        } else if (gameOverFromState === GAME_STATE.RHYTHM) {
-          starsCollected = 0;
-          lives = 3;
-          startRhythmFromBeginning();
-        } else {
-          currentState = GAME_STATE.TITLE;
-        }
-      }
-
-      if (keys["Escape"]) {
-        keys["Escape"] = false;
-        currentState = GAME_STATE.TITLE;
-      }
-      break;
-    }
-
-    case GAME_STATE.YOU_WIN: {
-      if (keys["Enter"]) {
-        keys["Enter"] = false;
-        currentState = GAME_STATE.TITLE;
-      }
-      break;
-    }
-
-    case GAME_STATE.PLATFORMER: {
-      const accel = 0.35;
-      const friction = 0.80;
-      const maxSpeed = player.speed;
-
-      if (keys["ArrowLeft"]) player.vx -= accel;
-      else if (keys["ArrowRight"]) player.vx += accel;
-      else player.vx *= friction;
-
-      if (player.vx > maxSpeed) player.vx = maxSpeed;
-      if (player.vx < -maxSpeed) player.vx = -maxSpeed;
-      if (Math.abs(player.vx) < 0.05) player.vx = 0;
-
-      if (player.vx < -0.1) facing = "left";
-      else if (player.vx > 0.1) facing = "right";
-
-      const movingNow = Math.abs(player.vx) > 0.2;
-      if (movingNow) walkTimer++;
-      else walkTimer = 0;
-
-      if (keys["ArrowUp"] && player.onGround) {
-        player.vy = -player.jumpPower;
-        player.onGround = false;
-        AudioMan.playSFX("jump", 0.55);
-      }
-
-      player.vy += gravity;
-      const prevY = player.y;
-
-      player.x += player.vx;
-      player.y += player.vy;
-
-      if (player.x < 0) { player.x = 0; player.vx = 0; }
-      if (player.x > canvas.width - player.width) { player.x = canvas.width - player.width; player.vx = 0; }
-
-      player.onGround = false;
-      for (let p of platforms) {
-        const overlapX = player.x < p.x + p.width && player.x + player.width > p.x;
-        const prevBottom = prevY + player.height;
-        const nowBottom = player.y + player.height;
-        const crossedTop = prevBottom <= p.y && nowBottom >= p.y;
-
-        if (overlapX && crossedTop && player.vy >= 0) {
-          player.y = p.y - player.height;
-          player.vy = 0;
-          player.onGround = true;
-        }
-      }
-
-      if (player.onGround && movingNow) {
-        footstepTimer++;
-        if (footstepTimer >= 18) {
-          AudioMan.playSFX("step", 0.30);
-          footstepTimer = 0;
-        }
-      } else {
-        footstepTimer = 0;
-      }
-
-      if (!star.collected && aabb(player.x, player.y, player.width, player.height, star.x, star.y, star.size, star.size)) {
-        star.collected = true;
-
-        starsCollected = Math.min(9, starsCollected + 1);
-
-        AudioMan.playSFX("coin", 0.60);
-        AudioMan.playStinger();
-
-        setTimeout(() => {
-          if (stagePart < 2) loadPlatformerSublevel(stagePart + 1);
-          else startShooterFromBeginning();
-        }, 600);
-      }
-
-      break;
-    }
-
-    case GAME_STATE.SHOOTER: {
-      const cfg = shooterLevels[stagePart];
-
-      let vx = 0;
-      if (keys["ArrowLeft"]) vx = -ship.speed;
-      if (keys["ArrowRight"]) vx = ship.speed;
-      ship.x = clamp(ship.x + vx, 0, canvas.width - ship.w);
-
-      if (invulnTimer > 0) invulnTimer--;
-
-      if (ship.cooldown > 0) ship.cooldown--;
-      if (ship.rapidTimer > 0) ship.rapidTimer--;
-
-      const baseFire = 20;
-      const rapidFire = 10;
-      const fireRate = (ship.rapidTimer > 0) ? rapidFire : baseFire;
-
-      if (keys[" "] && ship.cooldown === 0) {
-        bullets.push({ x: ship.x + ship.w/2 - 2, y: ship.y, w: 8, h: 16, vy: -5 });
-        ship.cooldown = fireRate;
-        AudioMan.playSFX("laser", 0.35);
-      }
-
-      meteorSpawnTimer++;
-      const MAX_METEORS = 26;
-      if (!starActive && meteors.length < MAX_METEORS && meteorSpawnTimer >= cfg.spawnEvery) {
-        meteorSpawnTimer = 0;
-
-        const sizes = stagePart === 0 ? [10] : (stagePart === 1 ? [10,20] : [10,20,30]);
-        const size = sizes[Math.floor(Math.random() * sizes.length)];
-        const hp = size / 10;
-
-        meteors.push({
-          x: rand(0, canvas.width - size),
-          y: -30,
-          size,
-          maxSize: size,
-          hp,
-          vy: rand(cfg.speedMin, cfg.speedMax),
-          variant: 1 + Math.floor(Math.random() * 4)
-        });
-      }
-
-      for (let i = bullets.length - 1; i >= 0; i--) {
-        bullets[i].y += bullets[i].vy;
-        if (bullets[i].y < -30) bullets.splice(i, 1);
-      }
-
-      for (let m = meteors.length - 1; m >= 0; m--) {
-        const met = meteors[m];
-        met.y += met.vy;
-
-        if (invulnTimer === 0 &&
-            aabb(ship.x, ship.y, ship.w, ship.h, met.x, met.y, met.size, met.size)) {
-          if (ship.shield === 1) {
-            ship.shield = 0;
-            meteors.splice(m, 1);
-            AudioMan.playSFX("explosion1", 0.35);
-          } else {
-            lives--;
-            invulnTimer = 60;
-            AudioMan.playSFX("explosion2", 0.55);
-
-            if (lives <= 0) {
-              triggerGameOver("You ran out of lives!");
-              return;
-            }
-          }
-        }
-
-        for (let b = bullets.length - 1; b >= 0; b--) {
-          const bul = bullets[b];
-          if (aabb(bul.x, bul.y, bul.w, bul.h, met.x, met.y, met.size, met.size)) {
-            bullets.splice(b, 1);
-
-            met.hp--;
-            points++;
-            met.size = Math.max(10, met.hp * 10);
-
-            if (met.hp <= 0) {
-              meteors.splice(m, 1);
-              AudioMan.playSFX((Math.random() < 0.5) ? "explosion1" : "explosion2", 0.45);
-
-              if (Math.random() < cfg.powerupChance) {
-                powerups.push({
-                  x: met.x,
-                  y: met.y,
-                  w: 10,
-                  h: 10,
-                  vy: 1.2,
-                  type: (Math.random() < 0.5) ? "shield" : "rapid"
-                });
-              }
-
-              if (!starActive && points >= cfg.killsToStar) {
-                starActive = true;
-                powerups.length = 0;
-                shooterStar.x = rand(80, canvas.width - 80);
-                shooterStar.y = 40;
-              }
-            }
-            break;
-          }
-        }
-
-        if (met.y > canvas.height + 40) meteors.splice(m, 1);
-      }
-
-      for (let p = powerups.length - 1; p >= 0; p--) {
-        const pu = powerups[p];
-        pu.y += pu.vy;
-
-        if (aabb(ship.x, ship.y, ship.w, ship.h, pu.x, pu.y, pu.w, pu.h)) {
-          if (pu.type === "shield") ship.shield = 1;
-          if (pu.type === "rapid") ship.rapidTimer = 300;
-          powerups.splice(p, 1);
-          AudioMan.playSFX("powerup", 0.55);
-          continue;
-        }
-
-        if (pu.y > canvas.height + 40) powerups.splice(p, 1);
-      }
-
-      if (starActive) {
-        const targetX = ship.x + ship.w/2;
-        const targetY = ship.y + ship.h/2;
-
-        shooterStar.x += (targetX - shooterStar.x) * 0.06;
-        shooterStar.y += (targetY - shooterStar.y) * 0.06;
-
-        if (aabb(ship.x, ship.y, ship.w, ship.h, shooterStar.x, shooterStar.y, shooterStar.size, shooterStar.size)) {
-          starActive = false;
-
-          starsCollected = Math.min(9, starsCollected + 1);
-
-          AudioMan.playSFX("coin", 0.65);
-          AudioMan.playStinger();
-
-          setTimeout(() => {
-            if (stagePart < 2) loadShooterSublevel(stagePart + 1);
-            else startRhythmFromBeginning();
-          }, 300);
-        }
-      }
-
-      break;
-    }
-
-    case GAME_STATE.RHYTHM: {
-      const cfg = rhythmLevels[stagePart];
-
-      if (rhythm.phase === "star") {
-        rhythm.star.bob += 1;
-        if (keys["Enter"]) {
-          keys["Enter"] = false;
-
-          starsCollected = Math.min(9, starsCollected + 1);
-          AudioMan.playSFX("coin", 0.70);
-          AudioMan.playStinger();
-
-          if (stagePart < 2) loadRhythmSublevel(stagePart + 1);
-          else currentState = GAME_STATE.YOU_WIN;
-        }
-        return;
-      }
-
-      rhythm.timerFrames++;
-      rhythm.spawnTimer++;
-
-      if (rhythm.spawnTimer >= cfg.spawnEveryFrames) {
-        rhythm.spawnTimer = 0;
-        const laneKey = pickNextLane(cfg);
-        rhythm.notes.push({ laneKey, x: RH_LANE_X[laneKey], y: RH_SPAWN_Y, hit: false });
-      }
-
-      for (let n of rhythm.notes) {
-        if (!n.hit) n.y += cfg.noteSpeed;
-      }
-
-      for (let i = rhythm.notes.length - 1; i >= 0; i--) {
-        const n = rhythm.notes[i];
-        if (n.y > canvas.height + 30) {
-          if (!n.hit) registerJudgment("MISS", -1, -2);
-          rhythm.notes.splice(i, 1);
-        }
-      }
-
-      if (rhythm.judgeTimer > 0) rhythm.judgeTimer--;
-
-      const timeLeft = cfg.durationSec - (rhythm.timerFrames / 60);
-
-      if (rhythm.score >= cfg.targetScore) {
-        rhythm.notes = [];
-        rhythm.judgeText = "";
-        rhythm.judgeTimer = 0;
-        rhythm.phase = "star";
-        AudioMan.playStinger();
-        return;
-      }
-
-      if (timeLeft <= 0) {
-        triggerGameOver("Time's up! You didn't reach the target score.");
-        return;
-      }
-
-      break;
-    }
-
-    case GAME_STATE.PUZZLE:
-      break;
-  }
+ switch (currentState) {
+   case GAME_STATE.TITLE:
+     if (keys["Enter"]) {
+       keys["Enter"] = false;
+       startNewGameFromTitle();
+     }
+     break;
+
+
+   case GAME_STATE.GAME_OVER: {
+     if (keys["Enter"]) {
+       keys["Enter"] = false;
+       startNewGameFromTitle();
+     }
+
+
+     if (keys["r"] || keys["R"]) {
+       keys["r"] = false; keys["R"] = false;
+
+
+       if (gameOverFromState === GAME_STATE.SHOOTER) {
+         starsCollected = 0;
+         lives = 3;
+         startShooterFromBeginning();
+       } else if (gameOverFromState === GAME_STATE.RHYTHM) {
+         starsCollected = 0;
+         lives = 3;
+         startRhythmFromBeginning();
+       } else {
+         currentState = GAME_STATE.TITLE;
+       }
+     }
+
+
+     if (keys["Escape"]) {
+       keys["Escape"] = false;
+       currentState = GAME_STATE.TITLE;
+     }
+     break;
+   }
+
+
+   case GAME_STATE.YOU_WIN: {
+     if (keys["Enter"]) {
+       keys["Enter"] = false;
+       currentState = GAME_STATE.TITLE;
+     }
+     break;
+   }
+
+
+   case GAME_STATE.PLATFORMER: {
+     const accel = 0.35;
+     const friction = 0.80;
+     const maxSpeed = player.speed;
+
+
+     if (keys["ArrowLeft"]) player.vx -= accel;
+     else if (keys["ArrowRight"]) player.vx += accel;
+     else player.vx *= friction;
+
+
+     if (player.vx > maxSpeed) player.vx = maxSpeed;
+     if (player.vx < -maxSpeed) player.vx = -maxSpeed;
+     if (Math.abs(player.vx) < 0.05) player.vx = 0;
+
+
+     if (player.vx < -0.1) facing = "left";
+     else if (player.vx > 0.1) facing = "right";
+
+
+     const movingNow = Math.abs(player.vx) > 0.2;
+     if (movingNow) walkTimer++;
+     else walkTimer = 0;
+
+
+     if (keys["ArrowUp"] && player.onGround) {
+       player.vy = -player.jumpPower;
+       player.onGround = false;
+       AudioMan.playSFX("jump", 0.55);
+     }
+
+
+     player.vy += gravity;
+     const prevY = player.y;
+
+
+     player.x += player.vx;
+     player.y += player.vy;
+
+
+     if (player.x < 0) { player.x = 0; player.vx = 0; }
+     if (player.x > canvas.width - player.width) { player.x = canvas.width - player.width; player.vx = 0; }
+
+
+     player.onGround = false;
+     for (let p of platforms) {
+       const overlapX = player.x < p.x + p.width && player.x + player.width > p.x;
+       const prevBottom = prevY + player.height;
+       const nowBottom = player.y + player.height;
+       const crossedTop = prevBottom <= p.y && nowBottom >= p.y;
+
+
+       if (overlapX && crossedTop && player.vy >= 0) {
+         player.y = p.y - player.height;
+         player.vy = 0;
+         player.onGround = true;
+       }
+     }
+
+
+     if (player.onGround && movingNow) {
+       footstepTimer++;
+       if (footstepTimer >= 18) {
+         AudioMan.playSFX("step", 0.30);
+         footstepTimer = 0;
+       }
+     } else {
+       footstepTimer = 0;
+     }
+
+
+     if (!star.collected && aabb(player.x, player.y, player.width, player.height, star.x, star.y, star.size, star.size)) {
+       star.collected = true;
+
+
+       starsCollected = Math.min(9, starsCollected + 1);
+
+
+       AudioMan.playSFX("coin", 0.60);
+       AudioMan.playStinger();
+
+
+       setTimeout(() => {
+         if (stagePart < 2) loadPlatformerSublevel(stagePart + 1);
+         else startShooterFromBeginning();
+       }, 600);
+     }
+
+
+     break;
+   }
+
+
+   case GAME_STATE.SHOOTER: {
+     const cfg = shooterLevels[stagePart];
+
+
+     let vx = 0;
+     if (keys["ArrowLeft"]) vx = -ship.speed;
+     if (keys["ArrowRight"]) vx = ship.speed;
+     ship.x = clamp(ship.x + vx, 0, canvas.width - ship.w);
+
+
+     if (invulnTimer > 0) invulnTimer--;
+
+
+     if (ship.cooldown > 0) ship.cooldown--;
+     if (ship.rapidTimer > 0) ship.rapidTimer--;
+
+
+     const baseFire = 20;
+     const rapidFire = 10;
+     const fireRate = (ship.rapidTimer > 0) ? rapidFire : baseFire;
+
+
+     if (keys[" "] && ship.cooldown === 0) {
+       bullets.push({ x: ship.x + ship.w/2 - 2, y: ship.y, w: 8, h: 16, vy: -5 });
+       ship.cooldown = fireRate;
+       AudioMan.playSFX("laser", 0.35);
+     }
+
+
+     meteorSpawnTimer++;
+     const MAX_METEORS = 26;
+     if (!starActive && meteors.length < MAX_METEORS && meteorSpawnTimer >= cfg.spawnEvery) {
+       meteorSpawnTimer = 0;
+
+
+       const sizes = stagePart === 0 ? [10] : (stagePart === 1 ? [10,20] : [10,20,30]);
+       const size = sizes[Math.floor(Math.random() * sizes.length)];
+       const hp = size / 10;
+
+
+       meteors.push({
+         x: rand(0, canvas.width - size),
+         y: -30,
+         size,
+         maxSize: size,
+         hp,
+         vy: rand(cfg.speedMin, cfg.speedMax),
+         variant: 1 + Math.floor(Math.random() * 4)
+       });
+     }
+
+
+     for (let i = bullets.length - 1; i >= 0; i--) {
+       bullets[i].y += bullets[i].vy;
+       if (bullets[i].y < -30) bullets.splice(i, 1);
+     }
+
+
+     for (let m = meteors.length - 1; m >= 0; m--) {
+       const met = meteors[m];
+       met.y += met.vy;
+
+
+       if (invulnTimer === 0 &&
+           aabb(ship.x, ship.y, ship.w, ship.h, met.x, met.y, met.size, met.size)) {
+         if (ship.shield === 1) {
+           ship.shield = 0;
+           meteors.splice(m, 1);
+           AudioMan.playSFX("explosion1", 0.35);
+         } else {
+           lives--;
+           invulnTimer = 60;
+           AudioMan.playSFX("explosion2", 0.55);
+
+
+           if (lives <= 0) {
+             triggerGameOver("You ran out of lives!");
+             return;
+           }
+         }
+       }
+
+
+       for (let b = bullets.length - 1; b >= 0; b--) {
+         const bul = bullets[b];
+         if (aabb(bul.x, bul.y, bul.w, bul.h, met.x, met.y, met.size, met.size)) {
+           bullets.splice(b, 1);
+
+
+           met.hp--;
+           points++;
+           met.size = Math.max(10, met.hp * 10);
+
+
+           if (met.hp <= 0) {
+             meteors.splice(m, 1);
+             AudioMan.playSFX((Math.random() < 0.5) ? "explosion1" : "explosion2", 0.45);
+
+
+             if (Math.random() < cfg.powerupChance) {
+               powerups.push({
+                 x: met.x,
+                 y: met.y,
+                 w: 10,
+                 h: 10,
+                 vy: 1.2,
+                 type: (Math.random() < 0.5) ? "shield" : "rapid"
+               });
+             }
+
+
+             if (!starActive && points >= cfg.killsToStar) {
+               starActive = true;
+               powerups.length = 0;
+               shooterStar.x = rand(80, canvas.width - 80);
+               shooterStar.y = 40;
+             }
+           }
+           break;
+         }
+       }
+
+
+       if (met.y > canvas.height + 40) meteors.splice(m, 1);
+     }
+
+
+     for (let p = powerups.length - 1; p >= 0; p--) {
+       const pu = powerups[p];
+       pu.y += pu.vy;
+
+
+       if (aabb(ship.x, ship.y, ship.w, ship.h, pu.x, pu.y, pu.w, pu.h)) {
+         if (pu.type === "shield") ship.shield = 1;
+         if (pu.type === "rapid") ship.rapidTimer = 300;
+         powerups.splice(p, 1);
+         AudioMan.playSFX("powerup", 0.55);
+         continue;
+       }
+
+
+       if (pu.y > canvas.height + 40) powerups.splice(p, 1);
+     }
+
+
+     if (starActive) {
+       const targetX = ship.x + ship.w/2;
+       const targetY = ship.y + ship.h/2;
+
+
+       shooterStar.x += (targetX - shooterStar.x) * 0.06;
+       shooterStar.y += (targetY - shooterStar.y) * 0.06;
+
+
+       if (aabb(ship.x, ship.y, ship.w, ship.h, shooterStar.x, shooterStar.y, shooterStar.size, shooterStar.size)) {
+         starActive = false;
+
+
+         starsCollected = Math.min(9, starsCollected + 1);
+
+
+         AudioMan.playSFX("coin", 0.65);
+         AudioMan.playStinger();
+
+
+         setTimeout(() => {
+           if (stagePart < 2) loadShooterSublevel(stagePart + 1);
+           else startRhythmFromBeginning();
+         }, 300);
+       }
+     }
+
+
+     break;
+   }
+
+
+   case GAME_STATE.RHYTHM: {
+     const cfg = rhythmLevels[stagePart];
+
+
+     if (rhythm.phase === "star") {
+       rhythm.star.bob += 1;
+       if (keys["Enter"]) {
+         keys["Enter"] = false;
+
+
+         starsCollected = Math.min(9, starsCollected + 1);
+         AudioMan.playSFX("coin", 0.70);
+         AudioMan.playStinger();
+
+
+         if (stagePart < 2) loadRhythmSublevel(stagePart + 1);
+         else currentState = GAME_STATE.YOU_WIN;
+       }
+       return;
+     }
+
+
+     rhythm.timerFrames++;
+     rhythm.spawnTimer++;
+
+
+     if (rhythm.spawnTimer >= cfg.spawnEveryFrames) {
+       rhythm.spawnTimer = 0;
+       const laneKey = pickNextLane(cfg);
+       rhythm.notes.push({ laneKey, x: RH_LANE_X[laneKey], y: RH_SPAWN_Y, hit: false });
+     }
+
+
+     for (let n of rhythm.notes) {
+       if (!n.hit) n.y += cfg.noteSpeed;
+     }
+
+
+     for (let i = rhythm.notes.length - 1; i >= 0; i--) {
+       const n = rhythm.notes[i];
+       if (n.y > canvas.height + 30) {
+         if (!n.hit) registerJudgment("MISS", -1, -2);
+         rhythm.notes.splice(i, 1);
+       }
+     }
+
+
+     if (rhythm.judgeTimer > 0) rhythm.judgeTimer--;
+
+
+     const timeLeft = cfg.durationSec - (rhythm.timerFrames / 60);
+
+
+     if (rhythm.score >= cfg.targetScore) {
+       rhythm.notes = [];
+       rhythm.judgeText = "";
+       rhythm.judgeTimer = 0;
+       rhythm.phase = "star";
+       AudioMan.playStinger();
+       return;
+     }
+
+
+     if (timeLeft <= 0) {
+       triggerGameOver("Time's up! You didn't reach the target score.");
+       return;
+     }
+
+
+     break;
+   }
+
+
+   case GAME_STATE.PUZZLE:
+     break;
+ }
 }
 
+
 /* ============================================================
-   DRAW ROUTER
-   - Calls the correct draw function for the current state.
+  DRAW ROUTER
+  - Calls the correct draw function for the current state.
 ============================================================ */
 function draw() {
-  if (pickerOn) { drawPickerOverlay(); return; }
+ if (pickerOn) { drawPickerOverlay(); return; }
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  switch (currentState) {
-    case GAME_STATE.TITLE:      drawTitle(); break;
-    case GAME_STATE.PLATFORMER: drawPlatformer(); break;
-    case GAME_STATE.SHOOTER:    drawShooter(); break;
-    case GAME_STATE.PUZZLE:
-      ctx.fillStyle = "white";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      ctx.font = "14px monospace";
-      ctx.fillText("Puzzle Level", 20, 20);
-      break;
-    case GAME_STATE.RHYTHM:     drawRhythm(); break;
-    case GAME_STATE.GAME_OVER:  drawGameOver(); break;
-    case GAME_STATE.YOU_WIN:    drawYouWin(); break;
-  }
+ ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+
+ switch (currentState) {
+   case GAME_STATE.TITLE:      drawTitle(); break;
+   case GAME_STATE.PLATFORMER: drawPlatformer(); break;
+   case GAME_STATE.SHOOTER:    drawShooter(); break;
+   case GAME_STATE.PUZZLE:
+     ctx.fillStyle = "white";
+     ctx.textAlign = "left";
+     ctx.textBaseline = "top";
+     ctx.font = "14px monospace";
+     ctx.fillText("Puzzle Level", 20, 20);
+     break;
+   case GAME_STATE.RHYTHM:     drawRhythm(); break;
+   case GAME_STATE.GAME_OVER:  drawGameOver(); break;
+   case GAME_STATE.YOU_WIN:    drawYouWin(); break;
+ }
 }
 
+
 /* ============================================================
-   TITLE SCREEN
+  TITLE SCREEN
 ============================================================ */
 function drawTitle() {
-  ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+ ctx.fillStyle = "black";
+ ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "white";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
 
-  ctx.font = "24px monospace";
-  ctx.fillText("FRAGMENTS OF THE SKY", canvas.width / 2, 130);
+ ctx.fillStyle = "white";
+ ctx.textAlign = "center";
+ ctx.textBaseline = "alphabetic";
 
-  ctx.font = "14px monospace";
-  ctx.fillText("Press ENTER to Begin", canvas.width / 2, 175);
 
-  ctx.font = "12px monospace";
-  ctx.fillText("Level 1 (Platformer): \u2190 \u2192 move, \u2191 jump", canvas.width / 2, 210);
-  ctx.fillText("Level 2 (Shooter): \u2190 \u2192 move, SPACE shoot", canvas.width / 2, 228);
-  ctx.fillText("Level 3 (Rhythm): Arrow keys to hit notes", canvas.width / 2, 246);
+ ctx.font = "24px monospace";
+ ctx.fillText("FRAGMENTS OF THE SKY", canvas.width / 2, 130);
 
-  ctx.fillText("Collect all 9 stars to fix the constellation.", canvas.width / 2, 278);
+
+ ctx.font = "14px monospace";
+ ctx.fillText("Press ENTER to Begin", canvas.width / 2, 175);
+
+
+ ctx.font = "12px monospace";
+ ctx.fillText("Level 1 (Platformer): \u2190 \u2192 move, \u2191 jump", canvas.width / 2, 210);
+ ctx.fillText("Level 2 (Shooter): \u2190 \u2192 move, SPACE shoot", canvas.width / 2, 228);
+ ctx.fillText("Level 3 (Rhythm): Arrow keys to hit notes", canvas.width / 2, 246);
+
+
+ ctx.fillText("Collect all 9 stars to fix the constellation.", canvas.width / 2, 278);
 }
 
+
 /* ============================================================
-   GAME OVER SCREEN
+  GAME OVER SCREEN
 ============================================================ */
 function drawGameOver() {
-  ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+ ctx.fillStyle = "black";
+ ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
 
-  ctx.fillStyle = "#ff3333";
-  ctx.font = "42px monospace";
-  ctx.fillText("GAME OVER", canvas.width / 2, 140);
+ ctx.textAlign = "center";
+ ctx.textBaseline = "middle";
 
-  ctx.fillStyle = "white";
-  ctx.font = "14px monospace";
-  ctx.fillText(gameOverReason || "Game Over", canvas.width / 2, 190);
 
-  ctx.fillText("Press ENTER to restart from Level 1a", canvas.width / 2, 230);
-  ctx.fillText("Press R to retry the failed mode", canvas.width / 2, 250);
-  ctx.fillText("Press ESC for Title", canvas.width / 2, 270);
+ ctx.fillStyle = "#ff3333";
+ ctx.font = "42px monospace";
+ ctx.fillText("GAME OVER", canvas.width / 2, 140);
+
+
+ ctx.fillStyle = "white";
+ ctx.font = "14px monospace";
+ ctx.fillText(gameOverReason || "Game Over", canvas.width / 2, 190);
+
+
+ ctx.fillText("Press ENTER to restart from Level 1a", canvas.width / 2, 230);
+ ctx.fillText("Press R to retry the failed mode", canvas.width / 2, 250);
+ ctx.fillText("Press ESC for Title", canvas.width / 2, 270);
 }
 
+
 /* ============================================================
-   YOU WIN SCREEN
+  YOU WIN SCREEN
 ============================================================ */
 function drawYouWin() {
-  ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+ ctx.fillStyle = "black";
+ ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
 
-  ctx.fillStyle = "#43d7ff";
-  ctx.font = "42px monospace";
-  ctx.fillText("YOU WIN", canvas.width / 2, 95);
+ ctx.textAlign = "center";
+ ctx.textBaseline = "middle";
 
-  ctx.fillStyle = "white";
-  ctx.font = "14px monospace";
-  ctx.fillText("You collected all 9 stars!", canvas.width / 2, 135);
 
-  const startX = canvas.width / 2 - 55;
-  const startY = 160;
-  const gap = 28;
-  const size = 16;
+ ctx.fillStyle = "#43d7ff";
+ ctx.font = "42px monospace";
+ ctx.fillText("YOU WIN", canvas.width / 2, 95);
 
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 3; col++) {
-      const x = startX + col * gap;
-      const y = startY + row * gap;
-      if (SPRITES.star) drawSprite("star", x, y, size, size);
-      else { ctx.fillStyle = "yellow"; ctx.fillRect(x, y, size, size); ctx.fillStyle = "white"; }
-    }
-  }
 
-  ctx.fillText("Press ENTER for Title", canvas.width / 2, 280);
+ ctx.fillStyle = "white";
+ ctx.font = "14px monospace";
+ ctx.fillText("You collected all 9 stars!", canvas.width / 2, 135);
+
+
+ const startX = canvas.width / 2 - 55;
+ const startY = 160;
+ const gap = 28;
+ const size = 16;
+
+
+ for (let row = 0; row < 3; row++) {
+   for (let col = 0; col < 3; col++) {
+     const x = startX + col * gap;
+     const y = startY + row * gap;
+     if (SPRITES.star) drawSprite("star", x, y, size, size);
+     else { ctx.fillStyle = "yellow"; ctx.fillRect(x, y, size, size); ctx.fillStyle = "white"; }
+   }
+ }
+
+
+ ctx.fillText("Press ENTER for Title", canvas.width / 2, 280);
 }
 
+
 /* ============================================================
-   PLATFORMER DRAW
+  PLATFORMER DRAW
 ============================================================ */
 function drawPlatformer() {
-  drawBackground("bg_level1");
+ drawBackground("bg_level1");
 
-  const letter = ["a", "b", "c"][stagePart];
-  ctx.fillStyle = "white";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.font = "14px monospace";
-  ctx.fillText(`Level ${stageNumber}${letter}`, 10, 10);
-  ctx.fillText(`Stars: ${starsCollected}/9`, 10, 28);
 
-  for (let p of platforms) drawPlatformWithTopAndBody(p);
+ const letter = ["a", "b", "c"][stagePart];
+ ctx.fillStyle = "white";
+ ctx.textAlign = "left";
+ ctx.textBaseline = "top";
+ ctx.font = "14px monospace";
+ ctx.fillText(`Level ${stageNumber}${letter}`, 10, 10);
+ ctx.fillText(`Stars: ${starsCollected}/9`, 10, 28);
 
-  const movingNow = Math.abs(player.vx) > 0.2;
-  const walkFrame = (Math.floor(walkTimer / 10) % 2);
 
-  let astroKey;
-  if (facing === "left") astroKey = (movingNow && walkFrame === 1) ? "astro_walk_left" : "astro_stand_left";
-  else astroKey = (movingNow && walkFrame === 1) ? "astro_walk_right" : "astro_stand_right";
+ for (let p of platforms) drawPlatformWithTopAndBody(p);
 
-  const ASTRONAUT_SCALE = 1.8;
-  const pdw = player.width  * ASTRONAUT_SCALE;
-  const pdh = player.height * ASTRONAUT_SCALE;
-  const pdx = player.x + player.width  / 2 - pdw / 2;
-  const pdy = player.y + player.height / 2 - pdh / 2;
 
-  if (SPRITES[astroKey]) drawSprite(astroKey, pdx, pdy, pdw, pdh);
-  else { ctx.fillStyle = "white"; ctx.fillRect(pdx, pdy, pdw, pdh); }
+ const movingNow = Math.abs(player.vx) > 0.2;
+ const walkFrame = (Math.floor(walkTimer / 10) % 2);
 
-  if (!star.collected) {
-    if (SPRITES.star) drawSprite("star", star.x, star.y, star.size, star.size);
-    else { ctx.fillStyle = "yellow"; ctx.fillRect(star.x, star.y, star.size, star.size); }
-  }
+
+ let astroKey;
+ if (facing === "left") astroKey = (movingNow && walkFrame === 1) ? "astro_walk_left" : "astro_stand_left";
+ else astroKey = (movingNow && walkFrame === 1) ? "astro_walk_right" : "astro_stand_right";
+
+
+ const ASTRONAUT_SCALE = 1.8;
+ const pdw = player.width  * ASTRONAUT_SCALE;
+ const pdh = player.height * ASTRONAUT_SCALE;
+ const pdx = player.x + player.width  / 2 - pdw / 2;
+ const pdy = player.y + player.height / 2 - pdh / 2;
+
+
+ if (SPRITES[astroKey]) drawSprite(astroKey, pdx, pdy, pdw, pdh);
+ else { ctx.fillStyle = "white"; ctx.fillRect(pdx, pdy, pdw, pdh); }
+
+
+ if (!star.collected) {
+   if (SPRITES.star) drawSprite("star", star.x, star.y, star.size, star.size);
+   else { ctx.fillStyle = "yellow"; ctx.fillRect(star.x, star.y, star.size, star.size); }
+ }
 }
 
+
 /* ============================================================
-   SHOOTER DRAW
+  SHOOTER DRAW
 ============================================================ */
 function drawShooter() {
-  drawBackground("bg_level2");
+ drawBackground("bg_level2");
 
-  const letter = ["a", "b", "c"][stagePart];
 
-  ctx.fillStyle = "white";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.font = "14px monospace";
-  ctx.fillText(`Level 2${letter}`, 10, 10);
-  ctx.fillText(`Stars: ${starsCollected}/9`, 10, 28);
-  ctx.fillText(`Lives: ${lives}`, 10, 46);
-  ctx.fillText(`Points: ${points}`, 10, 64);
+ const letter = ["a", "b", "c"][stagePart];
 
-  if (ship.shield === 1) ctx.fillText(`Shield: ON`, 10, 82);
-  if (ship.rapidTimer > 0) ctx.fillText(`Rapid: ON`, 10, 100);
 
-  if (SPRITES.rocket) {
-    if (invulnTimer === 0 || Math.floor(invulnTimer / 6) % 2 === 0) {
-      drawSprite("rocket", ship.x, ship.y, ship.w, ship.h);
-    }
-  } else {
-    if (invulnTimer === 0 || Math.floor(invulnTimer / 6) % 2 === 0) {
-      ctx.fillStyle = "white";
-      ctx.fillRect(ship.x, ship.y, ship.w, ship.h);
-    }
-  }
+ ctx.fillStyle = "white";
+ ctx.textAlign = "left";
+ ctx.textBaseline = "top";
+ ctx.font = "14px monospace";
+ ctx.fillText(`Level 2${letter}`, 10, 10);
+ ctx.fillText(`Stars: ${starsCollected}/9`, 10, 28);
+ ctx.fillText(`Lives: ${lives}`, 10, 46);
+ ctx.fillText(`Points: ${points}`, 10, 64);
 
-  for (let b of bullets) {
-    if (SPRITES.bullet) drawSprite("bullet", b.x, b.y, b.w, b.h);
-    else { ctx.fillStyle = "white"; ctx.fillRect(b.x, b.y, b.w, b.h); }
-  }
 
-  for (let m of meteors) {
-    const key = "asteroid" + (m.variant || 1);
-    if (SPRITES[key]) drawSprite(key, m.x, m.y, m.size, m.size);
-    else { ctx.fillStyle = "#888"; ctx.fillRect(m.x, m.y, m.size, m.size); }
-  }
+ if (ship.shield === 1) ctx.fillText(`Shield: ON`, 10, 82);
+ if (ship.rapidTimer > 0) ctx.fillText(`Rapid: ON`, 10, 100);
 
-  for (let p of powerups) {
-    if (p.type === "shield" && SPRITES.power_shield) drawSprite("power_shield", p.x, p.y, p.w, p.h);
-    else if (p.type === "rapid" && SPRITES.power_rapid) drawSprite("power_rapid", p.x, p.y, p.w, p.h);
-    else { ctx.fillStyle = (p.type === "shield") ? "#4aa3ff" : "#8dff8d"; ctx.fillRect(p.x, p.y, p.w, p.h); }
-  }
 
-  if (starActive) {
-    if (SPRITES.star) drawSprite("star", shooterStar.x, shooterStar.y, shooterStar.size, shooterStar.size);
-    else { ctx.fillStyle = "yellow"; ctx.fillRect(shooterStar.x, shooterStar.y, shooterStar.size, shooterStar.size); }
-    ctx.fillStyle = "white";
-    ctx.fillText("Star incoming!", 10, 120);
-  } else {
-    const cfg = shooterLevels[stagePart];
-    ctx.fillStyle = "white";
-    ctx.fillText(`Get ${cfg.killsToStar} points to spawn the star`, 10, 120);
-  }
+ if (SPRITES.rocket) {
+   if (invulnTimer === 0 || Math.floor(invulnTimer / 6) % 2 === 0) {
+     drawSprite("rocket", ship.x, ship.y, ship.w, ship.h);
+   }
+ } else {
+   if (invulnTimer === 0 || Math.floor(invulnTimer / 6) % 2 === 0) {
+     ctx.fillStyle = "white";
+     ctx.fillRect(ship.x, ship.y, ship.w, ship.h);
+   }
+ }
+
+
+ for (let b of bullets) {
+   if (SPRITES.bullet) drawSprite("bullet", b.x, b.y, b.w, b.h);
+   else { ctx.fillStyle = "white"; ctx.fillRect(b.x, b.y, b.w, b.h); }
+ }
+
+
+ for (let m of meteors) {
+   const key = "asteroid" + (m.variant || 1);
+   if (SPRITES[key]) drawSprite(key, m.x, m.y, m.size, m.size);
+   else { ctx.fillStyle = "#888"; ctx.fillRect(m.x, m.y, m.size, m.size); }
+ }
+
+
+ for (let p of powerups) {
+   if (p.type === "shield" && SPRITES.power_shield) drawSprite("power_shield", p.x, p.y, p.w, p.h);
+   else if (p.type === "rapid" && SPRITES.power_rapid) drawSprite("power_rapid", p.x, p.y, p.w, p.h);
+   else { ctx.fillStyle = (p.type === "shield") ? "#4aa3ff" : "#8dff8d"; ctx.fillRect(p.x, p.y, p.w, p.h); }
+ }
+
+
+ if (starActive) {
+   if (SPRITES.star) drawSprite("star", shooterStar.x, shooterStar.y, shooterStar.size, shooterStar.size);
+   else { ctx.fillStyle = "yellow"; ctx.fillRect(shooterStar.x, shooterStar.y, shooterStar.size, shooterStar.size); }
+   ctx.fillStyle = "white";
+   ctx.fillText("Star incoming!", 10, 120);
+ } else {
+   const cfg = shooterLevels[stagePart];
+   ctx.fillStyle = "white";
+   ctx.fillText(`Get ${cfg.killsToStar} points to spawn the star`, 10, 120);
+ }
 }
 
+
 /* ============================================================
-   RHYTHM DRAW
+  RHYTHM DRAW
 ============================================================ */
 function drawRhythm() {
-  const letter = ["a","b","c"][stagePart];
-  const cfg = rhythmLevels[stagePart];
+ const letter = ["a","b","c"][stagePart];
+ const cfg = rhythmLevels[stagePart];
 
-  ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "white";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.font = "14px monospace";
-  ctx.fillText(`Level 3${letter} (Rhythm)`, 10, 10);
-  ctx.fillText(`Stars: ${starsCollected}/9`, 10, 28);
+ ctx.fillStyle = "black";
+ ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  if (rhythm.phase === "star") {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "white";
-    ctx.font = "14px monospace";
-    ctx.fillText("Stage cleared!", canvas.width / 2, 80);
-    ctx.fillText("Press ENTER to collect the star", canvas.width / 2, 102);
 
-    const bob = Math.sin(rhythm.star.bob * 0.08) * 6;
-    const s = rhythm.star.size;
-    const x = rhythm.star.x - s / 2;
-    const y = rhythm.star.y - s / 2 + bob;
+ ctx.fillStyle = "white";
+ ctx.textAlign = "left";
+ ctx.textBaseline = "top";
+ ctx.font = "14px monospace";
+ ctx.fillText(`Level 3${letter} (Rhythm)`, 10, 10);
+ ctx.fillText(`Stars: ${starsCollected}/9`, 10, 28);
 
-    if (SPRITES.star) drawSprite("star", x, y, s, s);
-    else { ctx.fillStyle = "yellow"; ctx.fillRect(x, y, s, s); }
 
-    return;
-  }
+ if (rhythm.phase === "star") {
+   ctx.textAlign = "center";
+   ctx.textBaseline = "alphabetic";
+   ctx.fillStyle = "white";
+   ctx.font = "14px monospace";
+   ctx.fillText("Stage cleared!", canvas.width / 2, 80);
+   ctx.fillText("Press ENTER to collect the star", canvas.width / 2, 102);
 
-  const timeLeft = Math.max(0, cfg.durationSec - rhythm.timerFrames / 60);
-  ctx.fillStyle = "white";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.font = "14px monospace";
-  ctx.fillText(`Time: ${timeLeft.toFixed(1)}`, 10, 50);
-  ctx.fillText(`Score: ${rhythm.score}/${cfg.targetScore}`, 10, 68);
-  ctx.fillText(`Moves: ${rhythm.moves}`, 10, 86);
-  ctx.fillText(`Streak: ${rhythm.streak}`, 10, 104);
 
-  ctx.strokeStyle = "#333";
-  for (let k of cfg.lanes) {
-    const x = RH_LANE_X[k];
-    ctx.strokeRect(x - 12, 0, 24, canvas.height);
-  }
+   const bob = Math.sin(rhythm.star.bob * 0.08) * 6;
+   const s = rhythm.star.size;
+   const x = rhythm.star.x - s / 2;
+   const y = rhythm.star.y - s / 2 + bob;
 
-  ctx.strokeStyle = "white";
-  ctx.beginPath();
-  ctx.moveTo(180, RH_HIT_Y);
-  ctx.lineTo(460, RH_HIT_Y);
-  ctx.stroke();
 
-  for (let n of rhythm.notes) {
-    if (n.hit) continue;
-    drawRhythmNoteSprite(n.laneKey, n.x, n.y, RH_NOTE_SIZE);
-  }
+   if (SPRITES.star) drawSprite("star", x, y, s, s);
+   else { ctx.fillStyle = "yellow"; ctx.fillRect(x, y, s, s); }
 
-  drawRhythmJudgment();
 
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
-  ctx.font = "12px monospace";
-  ctx.fillStyle = "white";
-  ctx.fillText("Hit Arrow Keys when notes cross the line", canvas.width/2, canvas.height - 10);
+   return;
+ }
+
+
+ const timeLeft = Math.max(0, cfg.durationSec - rhythm.timerFrames / 60);
+ ctx.fillStyle = "white";
+ ctx.textAlign = "left";
+ ctx.textBaseline = "top";
+ ctx.font = "14px monospace";
+ ctx.fillText(`Time: ${timeLeft.toFixed(1)}`, 10, 50);
+ ctx.fillText(`Score: ${rhythm.score}/${cfg.targetScore}`, 10, 68);
+ ctx.fillText(`Moves: ${rhythm.moves}`, 10, 86);
+ ctx.fillText(`Streak: ${rhythm.streak}`, 10, 104);
+
+
+ ctx.strokeStyle = "#333";
+ for (let k of cfg.lanes) {
+   const x = RH_LANE_X[k];
+   ctx.strokeRect(x - 12, 0, 24, canvas.height);
+ }
+
+
+ ctx.strokeStyle = "white";
+ ctx.beginPath();
+ ctx.moveTo(180, RH_HIT_Y);
+ ctx.lineTo(460, RH_HIT_Y);
+ ctx.stroke();
+
+
+ for (let n of rhythm.notes) {
+   if (n.hit) continue;
+   drawRhythmNoteSprite(n.laneKey, n.x, n.y, RH_NOTE_SIZE);
+ }
+
+
+ drawRhythmJudgment();
+
+
+ ctx.textAlign = "center";
+ ctx.textBaseline = "alphabetic";
+ ctx.font = "12px monospace";
+ ctx.fillStyle = "white";
+ ctx.fillText("Hit Arrow Keys when notes cross the line", canvas.width/2, canvas.height - 10);
 }
 
+
 /* ============================================================
-   PLATFORMER RESET
-   - Restores player and star to default positions for a sublevel.
+  PLATFORMER RESET
+  - Restores player and star to default positions for a sublevel.
 ============================================================ */
 function resetPlatformer() {
-  player.x = 50;
-  player.y = 250;
-  player.vx = 0;
-  player.vy = 0;
-  player.onGround = false;
-  star.collected = false;
+ player.x = 50;
+ player.y = 250;
+ player.vx = 0;
+ player.vy = 0;
+ player.onGround = false;
+ star.collected = false;
 
-  walkTimer = 0;
-  footstepTimer = 0;
-  facing = "right";
+
+ walkTimer = 0;
+ footstepTimer = 0;
+ facing = "right";
 }
 
+
 /* ============================================================
-   GAME STARTUP
-   - Loads assets, then begins the animation loop.
+  GAME STARTUP
+  - Loads assets, then begins the animation loop.
 ============================================================ */
 (async function start() {
-  try { await loadAssets(); } catch (e) {}
-  gameLoop();
+ try { await loadAssets(); } catch (e) {}
+ gameLoop();
 })();
 </script>
 
+
 </body>
 </html>
+
+
+
